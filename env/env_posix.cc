@@ -337,6 +337,7 @@ class PosixEnv : public Env {
     SetFD_CLOEXEC(fd, &options);
 
     if (options.use_mmap_writes) {
+      /*
       if (!checkedDiskForMmap_) {
         // this will be executed once in the program's lifetime.
         // do not use mmapWrite on non ext-3/xfs/tmpfs systems.
@@ -345,6 +346,7 @@ class PosixEnv : public Env {
         }
         checkedDiskForMmap_ = true;
       }
+      */
     }
     if (options.use_mmap_writes && !forceMmapOff_) {
       result->reset(new PosixMmapFile(fname, fd, page_size_, options));
@@ -434,6 +436,7 @@ class PosixEnv : public Env {
     }
 
     if (options.use_mmap_writes) {
+      /*
       if (!checkedDiskForMmap_) {
         // this will be executed once in the program's lifetime.
         // do not use mmapWrite on non ext-3/xfs/tmpfs systems.
@@ -442,6 +445,7 @@ class PosixEnv : public Env {
         }
         checkedDiskForMmap_ = true;
       }
+      */
     }
     if (options.use_mmap_writes && !forceMmapOff_) {
       result->reset(new PosixMmapFile(fname, fd, page_size_, options));

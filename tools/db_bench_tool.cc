@@ -28,6 +28,9 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <sys/mman.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
 
 #include "db/db_impl/db_impl.h"
 #include "db/malloc_stats.h"
@@ -536,7 +539,7 @@ DEFINE_double(memtable_bloom_size_ratio, 0,
               "filter.");
 DEFINE_bool(memtable_whole_key_filtering, false,
             "Try to use whole key bloom filter in memtables.");
-DEFINE_bool(memtable_use_huge_page, false,
+DEFINE_bool(memtable_use_huge_page, true,
             "Try to use huge page in memtables.");
 
 DEFINE_bool(use_existing_db, false, "If true, do not destroy the existing"
@@ -602,7 +605,7 @@ DEFINE_bool(sync, false, "Sync all writes to disk");
 
 DEFINE_bool(use_fsync, false, "If true, issue fsync instead of fdatasync");
 
-DEFINE_bool(disable_wal, false, "If true, do not write WAL for write.");
+DEFINE_bool(disable_wal, true, "If true, do not write WAL for write.");
 
 DEFINE_string(wal_dir, "", "If not empty, use the given dir for WAL");
 
@@ -845,7 +848,7 @@ static std::string ColumnFamilyName(size_t i) {
   }
 }
 
-DEFINE_string(compression_type, "snappy",
+DEFINE_string(compression_type, "none",
               "Algorithm to use to compress the database");
 static enum rocksdb::CompressionType FLAGS_compression_type_e =
     rocksdb::kSnappyCompression;
@@ -1088,10 +1091,10 @@ DEFINE_uint64(wal_size_limit_MB, 0, "Set the size limit for the WAL Files"
               " in MB.");
 DEFINE_uint64(max_total_wal_size, 0, "Set total max WAL size");
 
-DEFINE_bool(mmap_read, rocksdb::Options().allow_mmap_reads,
+DEFINE_bool(mmap_read, true,
             "Allow reads to occur via mmap-ing files");
 
-DEFINE_bool(mmap_write, rocksdb::Options().allow_mmap_writes,
+DEFINE_bool(mmap_write, true,
             "Allow writes to occur via mmap-ing files");
 
 DEFINE_bool(use_direct_reads, rocksdb::Options().use_direct_reads,
@@ -3440,8 +3443,8 @@ class Benchmark {
     options.max_background_flushes = FLAGS_max_background_flushes;
     options.compaction_style = FLAGS_compaction_style_e;
     options.compaction_pri = FLAGS_compaction_pri_e;
-    options.allow_mmap_reads = FLAGS_mmap_read;
-    options.allow_mmap_writes = FLAGS_mmap_write;
+    options.allow_mmap_reads = true;
+    options.allow_mmap_writes = true;
     options.use_direct_reads = FLAGS_use_direct_reads;
     options.use_direct_io_for_flush_and_compaction =
         FLAGS_use_direct_io_for_flush_and_compaction;
@@ -4162,6 +4165,15 @@ class Benchmark {
     WriteBatch batch;
     Status s;
     int64_t bytes = 0;
+	struct  rusage *usage;
+
+	usage = (struct rusage *) malloc (sizeof(struct rusage));
+
+    printf("PAGE FAULTS BEFORE WORKLOAD: \n");
+	getrusage(RUSAGE_SELF, usage);
+	printf("soft page faults (ru_minflt) : %ld\n", usage->ru_minflt);
+	printf("hard page faults (ru_majflt) : %ld\n", usage->ru_majflt);
+    printf("--------- \n");
 
     std::unique_ptr<const char[]> key_guard;
     Slice key = AllocateKey(&key_guard);
@@ -4312,6 +4324,13 @@ class Benchmark {
         exit(1);
       }
     }
+
+    printf("PAGE FAULTS AFTER WORKLOAD: \n");
+	getrusage(RUSAGE_SELF, usage);
+	printf("soft page faults (ru_minflt) : %ld\n", usage->ru_minflt);
+	printf("hard page faults (ru_majflt) : %ld\n", usage->ru_majflt);
+    printf("--------- \n");
+
     thread->stats.AddBytes(bytes);
   }
 
@@ -4637,6 +4656,16 @@ class Benchmark {
     Iterator* iter = db->NewIterator(options);
     int64_t i = 0;
     int64_t bytes = 0;
+	struct  rusage *usage;
+
+	usage = (struct rusage *) malloc (sizeof(struct rusage));
+
+    printf("PAGE FAULTS BEFORE WORKLOAD: \n");
+	getrusage(RUSAGE_SELF, usage);
+	printf("soft page faults (ru_minflt) : %ld\n", usage->ru_minflt);
+	printf("hard page faults (ru_majflt) : %ld\n", usage->ru_majflt);
+    printf("--------- \n");
+
     for (iter->SeekToFirst(); i < reads_ && iter->Valid(); iter->Next()) {
       bytes += iter->key().size() + iter->value().size();
       thread->stats.FinishedOps(nullptr, db, 1, kRead);
@@ -4649,6 +4678,12 @@ class Benchmark {
                                                    RateLimiter::OpType::kRead);
       }
     }
+
+    printf("PAGE FAULTS AFTER WORKLOAD: \n");
+	getrusage(RUSAGE_SELF, usage);
+	printf("soft page faults (ru_minflt) : %ld\n", usage->ru_minflt);
+	printf("hard page faults (ru_majflt) : %ld\n", usage->ru_majflt);
+    printf("--------- \n");
 
     delete iter;
     thread->stats.AddBytes(bytes);

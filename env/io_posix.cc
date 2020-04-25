@@ -565,6 +565,9 @@ PosixMmapReadableFile::~PosixMmapReadableFile() {
 Status PosixMmapReadableFile::Read(uint64_t offset, size_t n, Slice* result,
                                    char* /*scratch*/) const {
   Status s;
+  if (n == 0)
+	  printf("[%s: %d] - Reading. offset = %lu. size = %lu. WEIRD\n", __func__, __LINE__, offset, n);
+  
   if (offset > length_) {
     *result = Slice();
     return IOError("While mmap read offset " + ToString(offset) +

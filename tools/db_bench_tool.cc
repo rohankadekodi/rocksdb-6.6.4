@@ -46,6 +46,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <fstream>
+#include <dirent.h>
 
 #include "db/db_impl/db_impl.h"
 #include "db/malloc_stats.h"
@@ -91,6 +92,11 @@
 #include "utilities/merge_operators/bytesxor.h"
 #include "utilities/merge_operators/sortlist.h"
 #include "utilities/persistent_cache/block_cache_tier.h"
+
+#include <pthread.h>
+#include <errno.h>
+#include <sys/ioctl.h>
+#include <linux/fs.h>
 
 #define MAX_TRACE_OPS 100000000
 #define MAX_VALUE_SIZE (1024 * 1024)
@@ -5275,8 +5281,7 @@ class Benchmark {
 
 	struct result_t& resultt = results[tid];
 	printf("\n\nThread %d: Done replaying %llu operations.\n", tid, total_ops);
-	unsigned long long splitup_ops = print_splitup(tid);
-	assert(splitup_ops == total_ops);
+	print_splitup(tid);
 	printf("Thread %d: %lu of %llu operations succeeded.\n", tid, succeeded, total_ops);
 	printf("Thread %d: Time taken = %0.3lf seconds\n", tid, secs);
 	printf("Thread %d: Total data: YCSB = %0.6lf GB, HyperLevelDB = %0.6lf GB\n", tid,
@@ -7236,6 +7241,88 @@ int db_bench_tool(int argc, char** argv) {
             "Cannot provide both --statistics and --statistics_string.\n");
     exit(1);
   }
+
+  int ioctl_fd = 0;
+  int ioctl_ret = 0, ret_s = 0;
+  char ioctl_file_name[256];
+  int hugepages_ioctl_value = 0x40000000;
+  int new_numa_ioctl_value = 0x00800000;
+  int dummy_ioctl_value = 0x00000000;
+  int cpu_start, cpu_end, cpu_idx;
+  cpu_set_t cpuset;
+  pthread_t thread;
+
+  thread = pthread_self();
+
+  sprintf(ioctl_file_name, "/mnt/pmem_emul/ioctl_file_%d\n", getpid());
+
+  ioctl_fd = open(ioctl_file_name, O_RDWR | O_CREAT, 0666);
+  if (ioctl_fd < 0) {
+      printf("%s: ioctl file open failed. Err = %s\n", __func__, strerror(errno));
+      exit(-1);
+  }
+
+  ioctl_ret = ioctl(ioctl_fd, FS_IOC_SETFLAGS, &hugepages_ioctl_value);
+  if (ioctl_ret != 0) {
+      printf("%s: Hugepages ioctl failed. Error = %s\n", __func__, strerror(errno));
+  } else {
+      printf("%s: ioctl passed. Will get huge pages for this application\n", __func__);
+  }
+
+  if (FLAGS_use_existing_db == false) {
+      ioctl_ret = ioctl(ioctl_fd, _IOWR('f', 19, unsigned long), &new_numa_ioctl_value);
+      if (ioctl_ret < 0) {
+          printf("%s: NUMA ioctl failed. Err = %s\n", __func__, strerror(errno));
+      } else {
+          printf("%s: ioctl passed. Will use NUMA node %d for this application\n", __func__, ioctl_ret);
+      }
+
+  } else {
+
+      ioctl_fd = open(FLAGS_db.c_str(), O_DIRECTORY | O_RDONLY);
+      if (ioctl_fd < 0) {
+          printf("%s: ioctl file open failed. Err = %s\n", __func__, strerror(errno));
+          exit(-1);
+      }
+
+      ioctl_ret = ioctl(ioctl_fd, _IOWR('f', 19, unsigned long), &dummy_ioctl_value);
+      if (ioctl_ret < 0) {
+          printf("%s: NUMA ioctl failed. Err = %s\n", __func__, strerror(errno));
+      } else {
+          printf("%s: ioctl passed. Will use NUMA node %d for this application\n",  __func__, ioctl_ret);
+      }
+
+      close(ioctl_fd);
+  }
+
+  if (ioctl_ret >= 0) {
+      CPU_ZERO(&cpuset);
+      if (ioctl_ret == 0) {
+          cpu_start = 1;
+          cpu_end = 40;
+      } else if (ioctl_ret == 1) {
+          cpu_start = 1;
+          cpu_end = 40;
+      }
+
+      for (cpu_idx = cpu_start; cpu_idx < cpu_end; cpu_idx++) {
+          CPU_SET(cpu_idx, &cpuset);
+      }
+
+      ret_s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
+      if (ret_s != 0)
+          printf("pthread_setaffinity_np failed\n");
+
+      ret_s = pthread_getaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
+      if (ret_s != 0)
+          printf("pthread_getaffinity_np failed\n");
+
+      printf("Set returned by pthread_getaffinity_np() contained:\n");
+      for (cpu_idx = cpu_start; cpu_idx < CPU_SETSIZE; cpu_idx++)
+          if (CPU_ISSET(cpu_idx, &cpuset))
+              printf("    CPU %d\n", cpu_idx);
+  }
+
   if (!FLAGS_statistics_string.empty()) {
     Status s = ObjectRegistry::NewInstance()->NewSharedObject<Statistics>(
         FLAGS_statistics_string, &dbstats);
@@ -7343,6 +7430,14 @@ int db_bench_tool(int argc, char** argv) {
 
   rocksdb::Benchmark benchmark;
   benchmark.Run();
+
+  ioctl_ret = ioctl(ioctl_fd, FS_IOC_SETFLAGS, &hugepages_ioctl_value);
+  if (ioctl_ret != 0) {
+      printf("%s: Hugepages ioctl failed. Error = %s\n", __func__, strerror(errno));
+  } else {
+      printf("%s: ioctl passed. Will get huge pages for this application\n", __func__);
+  }
+  close (ioctl_fd);
 
 #ifndef ROCKSDB_LITE
   if (FLAGS_print_malloc_stats) {

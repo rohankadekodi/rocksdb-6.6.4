@@ -69,7 +69,7 @@ struct EnvOptions {
   explicit EnvOptions(const DBOptions& options);
 
   // If true, then use mmap to read data
-  bool use_mmap_reads = true;
+  bool use_mmap_reads = false;
 
   // If true, then use mmap to write data
   bool use_mmap_writes = true;

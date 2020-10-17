@@ -640,12 +640,12 @@ struct DBOptions {
   size_t manifest_preallocation_size = 4 * 1024 * 1024;
 
   // Allow the OS to mmap file for reading sst tables. Default: false
-  bool allow_mmap_reads = true;
+  bool allow_mmap_reads = false;
 
   // Allow the OS to mmap file for writing.
   // DB::SyncWAL() only works if this is set to false.
   // Default: false
-  bool allow_mmap_writes = true;
+  bool allow_mmap_writes = false;
 
   // Enable direct I/O mode for read/write
   // they may or may not improve performance depending on the use case

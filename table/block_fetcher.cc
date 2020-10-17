@@ -34,9 +34,6 @@ inline void BlockFetcher::CheckBlockChecksum() {
   if (read_options_.verify_checksums) {
     const char* data = slice_.data();  // Pointer to where Read put the data
     PERF_TIMER_GUARD(block_checksum_time);
-    if (block_size_ == 0) {
-	    printf("[%s: %d] - block size is 0. WEIRD\n", __func__, __LINE__);
-    }
     uint32_t value = DecodeFixed32(data + block_size_ + 1);
     uint32_t actual = 0;
     switch (footer_.checksum()) {
@@ -199,9 +196,6 @@ inline void BlockFetcher::GetBlockContents() {
 
 Status BlockFetcher::ReadBlockContents() {
   block_size_ = static_cast<size_t>(handle_.size());
-  if (block_size_ == 0) {
-	  printf("[%s: %d] - block size is 0. WEIRD\n", __func__, __LINE__);
-  }
 
   if (TryGetUncompressBlockFromPersistentCache()) {
     compression_type_ = kNoCompression;
